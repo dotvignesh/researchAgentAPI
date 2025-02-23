@@ -14,10 +14,8 @@ load_dotenv()
 
 from fastapi.middleware.cors import CORSMiddleware
 
-# Initialize FastAPI app
 app = FastAPI(title="Market Research and Presentation API")
 
-# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Adjust this for production
