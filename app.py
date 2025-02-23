@@ -31,6 +31,10 @@ app.add_middleware(
 class ResearchRequest(BaseModel):
     prompt: str
 
+class EditRequest(BaseModel):
+    html_input: str
+    prompt: str
+
 # Initialize OpenAI client
 openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -40,14 +44,6 @@ def create_market_research_agent():
         api_key=os.getenv("OPENAI_API_KEY")
     )
     web_tools = [DuckDuckGoSearchTool()]
-    
-    # web_search_agent = CodeAgent(
-    #     model=model,
-    #     tools=web_tools,
-    #     verbosity_level=2,
-    #     name="web_search_agent",
-    #     description="A sub-agent that searches the internet to gather data."
-    # )
 
     web_search_agent = ToolCallingAgent(
         model=model,
@@ -75,7 +71,7 @@ def create_market_research_agent():
     )
     return manager_agent
 
-def create_presentation_agent():
+def create_markdown_agent():
     model = OpenAIServerModel(
         model_id="gpt-4o-mini",
         api_key=os.getenv("OPENAI_API_KEY")
@@ -89,31 +85,15 @@ def create_presentation_agent():
 
 # Global agent instances
 market_research_agent = create_market_research_agent()
-presentation_agent = create_presentation_agent()
+markdown_agent = create_markdown_agent()
 
-# [Your existing generate_reveal_js_code function remains the same]
-def generate_reveal_js_code(analysis_json: str) -> str:
-    prompt = f"""
-    You are a coding assistant tasked with generating a Reveal.js presentation based on a market research analysis. Given the JSON analysis below, create a complete HTML file with Reveal.js setup and slides. Include only the necessary content from the analysis, create as many slides as required.
-
-    Use the Reveal.js CDN (https://cdn.jsdelivr.net/npm/reveal.js@4.6.0/dist/). Use clean and minimalistic styling - it should look professional like how Apple's PPTs would look. But don't make it look very boring. Always use contrasting colors, don't use colors that look painful.
-    Include sources from the analysis only if possible. 
-    Don't make up stuff (mainly links and facts) or hallucinate anything that's not there in the analysis given to you.
-
-    Analysis JSON:
-    {json.dumps(analysis_json)}
-
-    Return only the HTML code as a string, with no additional explanation or text.
-    """
-    
+def presentation_code_agent(prompt: str) -> str:
     response = openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=2000
     )
     return response.choices[0].message.content.strip()
-
-import traceback  # Add this import at the top
 
 import traceback  # For detailed error logging
 
@@ -160,7 +140,7 @@ async def conduct_research_and_present(request: ResearchRequest):
             - "recommendations": A list of actionable, data-driven strategic recommendations.
         - If the query or topic warrants additional insights or sections, dynamically include extra fields that best capture the full scope of your analysis.
 
-        Return only the structured JSON response, STRICTLY ONLY AFTER YOU HAVE COMPLETED ALL YOUR ANALYSIS, with no additional commentary or explanation.
+        Return only the structured JSON response, STRICTLY ONLY AFTER YOU HAVE COMPLETED ALL YOUR ANALYSIS, with no additional commentary or explanation. Do not redact any data anywhere in the final output. The user needs to know your complete analysis always.
         """
 
 
@@ -168,54 +148,46 @@ async def conduct_research_and_present(request: ResearchRequest):
         print("-------STARTING RESEARCH---------")
         
         # Run the research agent
-        analysis_json = market_research_agent.run(research_prompt)
-        
-        print("-------ANALYSIS DONE---------")
-        
-        if isinstance(analysis_json, str):
-            # Remove markdown code fences if present
-            cleaned = analysis_json.strip()
-            if cleaned.startswith("```"):
-                # Remove the first line if it's a code fence
-                lines = cleaned.splitlines()
-                if lines[0].startswith("```"):
-                    lines = lines[1:]
-                # Remove the last line if it's a code fence
-                if lines and lines[-1].startswith("```"):
-                    lines = lines[:-1]
-                cleaned = "\n".join(lines).strip()
-            try:
-                analysis_data = json.loads(cleaned)
-            except json.JSONDecodeError:
-                print("Error: Research agent returned invalid JSON!")
-                print("Response received:", cleaned)
-                raise HTTPException(status_code=500, detail="Research agent returned invalid JSON.")
-        elif isinstance(analysis_json, dict):
-            analysis_data = analysis_json
-        else:
-            print("Unexpected response type:", type(analysis_json))
-            raise HTTPException(status_code=500, detail="Unexpected data format from research agent.")
-
+        analysis = market_research_agent.run(research_prompt)
 
         # Generate markdown summary
-        presentation_prompt = f"""
-        You are a presentation generator. Given the market research analysis JSON below, create a clean, concise Markdown summary of the analysis. Focus on clarity and professionalism.
+        markdown_prompt = f"""
+        You are a presentation generator. Given the semi-structured market research analysis data below, create a clean, concise Markdown summary of the analysis. Focus on clarity and professionalism. 
+        Include every piece of information provided to you.
+        Do not change or add any extra information to you more than what's given to you.
 
-        Analysis JSON:
-        {json.dumps(analysis_data)}
+        Analysis Data:
+        {analysis}
 
         Return only the Markdown string, no additional text.
         """
 
         print("-------GENERATING MARKDOWN---------")
         
-        markdown_output = presentation_agent.run(presentation_prompt)
+        markdown_output = markdown_agent.run(markdown_prompt)
 
         print("-------MARKDOWN DONE---------")
         
         # Generate Reveal.js code
         print("-------GENERATING REVEAL.JS PRESENTATION---------")
-        reveal_js_code = generate_reveal_js_code(analysis_data)
+        presentation_prompt = f"""
+        You are a coding assistant tasked with generating a Reveal.js presentation based on a market research analysis. 
+        Given the analysis below, create a complete HTML file with Reveal.js setup and slides. Include only the necessary content from the analysis, create as many slides as required.
+
+        Use the Reveal.js CDN (https://cdn.jsdelivr.net/npm/reveal.js@4.6.0/dist/). 
+        Use clean and minimalistic styling - it should look professional like how Apple's PPTs would look. 
+        But don't make it look very boring. Always use contrasting colors, don't use colors that look painful.
+        Include sources from the analysis only if possible. 
+        Don't make up stuff (mainly links and facts) or hallucinate anything that's not there in the analysis given to you.
+
+        Don't put too much content on one slide, create an additional slide for the same topic if required.
+
+        Analysis Data:
+        {markdown_prompt}
+
+        Return only the HTML code as a string, with no additional explanation or text.
+        """
+        reveal_js_code = presentation_code_agent(presentation_prompt)
 
         print("-------PRESENTATION DONE---------")
         
@@ -232,6 +204,41 @@ async def conduct_research_and_present(request: ResearchRequest):
         
         raise HTTPException(status_code=500, detail=f"Research failed: {str(e)}")
 
+@app.post("/edit")
+async def edit_revealjs_html(request: EditRequest):
+    edit_prompt = f"""
+    You are a coding assistant specialized in Reveal.js presentations.
+    Given the Reveal.js HTML code below, modify it according to the user's prompt.
+    Only make changes that maintain valid Reveal.js structure and functionality.
+    Return a response in the following format:
+    - First, provide an explanation of what changes were made
+    - Then, include the complete modified HTML code within triple backticks (```)
+    Ensure the code remains a valid Reveal.js presentation using the CDN (https://cdn.jsdelivr.net/npm/reveal.js@4.6.0/dist/).
+    Do not redact any part of the code - include all existing content plus the requested changes.
+
+    Original Reveal.js HTML:
+    {request.html_input}
+
+    User Prompt:
+    {request.prompt}
+
+    Do not mention Reveal.js or any technical details of how you changed.
+    Return only the explanation followed by the modified Reveal.js HTML code within ``` marks, with no additional text outside this format. 
+    """
+    
+    result = presentation_code_agent(edit_prompt)
+    
+    # Split the result into explanation and code
+    explanation = result.split("```")[0].strip()
+    modified_html = result.split("```")[1].strip()
+    
+    return {
+        "status": "success",
+        "result": {
+            "explanation": explanation,
+            "html": modified_html
+        }
+    }
 
 @app.get("/health")
 async def health_check():
