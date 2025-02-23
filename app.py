@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from smolagents import CodeAgent, DuckDuckGoSearchTool, VisitWebpageTool
+from smolagents import CodeAgent, DuckDuckGoSearchTool, ToolCallingAgent
 from smolagents.models import OpenAIServerModel
 from pydantic import BaseModel
 import os
@@ -41,12 +41,28 @@ def create_market_research_agent():
     )
     web_tools = [DuckDuckGoSearchTool()]
     
-    web_search_agent = CodeAgent(
+    # web_search_agent = CodeAgent(
+    #     model=model,
+    #     tools=web_tools,
+    #     verbosity_level=2,
+    #     name="web_search_agent",
+    #     description="A sub-agent that searches the internet to gather data."
+    # )
+
+    web_search_agent = ToolCallingAgent(
         model=model,
         tools=web_tools,
+        max_steps=20,
         verbosity_level=2,
-        name="web_search_agent",
-        description="A sub-agent that searches the internet to gather data."
+        planning_interval=4,
+        name="search_agent",
+        description="""A team member that will search the internet to answer your question.
+    Ask him for all your questions that require browsing the web.
+    Provide him as much context as possible, in particular if you need to search on a specific timeframe!
+    And don't hesitate to provide him with a complex search task, like finding a difference between two webpages.
+    Your request must be a real sentence, not a google search! Like "Find me this information (...)" rather than a few keywords.
+    """,
+        provide_run_summary=True,
     )
     
     manager_agent = CodeAgent(
@@ -54,6 +70,7 @@ def create_market_research_agent():
         tools=web_tools,
         verbosity_level=2,
         managed_agents=[web_search_agent],
+        planning_interval=4,
         additional_authorized_imports=["requests", "os", "json"]
     )
     return manager_agent
@@ -104,7 +121,15 @@ import traceback  # For detailed error logging
 async def conduct_research_and_present(request: ResearchRequest):
     try:
         research_prompt = f"""
-        You are a world-class market research consultant with credentials from top institutions such as INSEAD and Harvard. Your task is to perform a rigorous, data-driven analysis solely based on real-time research conducted using the available web tool. You must ALWAYS and without exception use the web tool to retrieve *only factual, up-to-date information* from highly credible online sources. Do not rely on any pre-existing internal knowledge or unverified content—every data point in your analysis must be backed by a web-sourced reference (include source URLs).
+        You are a world-class market research consultant with credentials from top institutions such as INSEAD and Harvard. 
+        Your task is to perform a rigorous, data-driven analysis solely based on real-time research conducted using the available web tool. 
+        You must ALWAYS and without exception use the web tool to retrieve *only factual, up-to-date information* from highly credible online sources.
+        Do not rely on any pre-existing internal knowledge or unverified content—every data point in your analysis must be backed by a web-sourced reference (include source URLs).
+
+        It is paramount that you provide a correct answer.
+        Give it all you can: I know for a fact that you have access to all the relevant tools to solve it and find the correct answer (the answer does exist). Failure or 'I cannot answer' or 'None found' will not be tolerated, success will be rewarded.
+        Run verification steps if that's needed, you must make sure you find the correct answer!
+        Here is the task:
 
         Your analysis must include the following baseline components:
 
