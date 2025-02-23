@@ -211,7 +211,7 @@ async def edit_revealjs_html(request: EditRequest):
     Given the Reveal.js HTML code below, modify it according to the user's prompt.
     Only make changes that maintain valid Reveal.js structure and functionality.
     Return a response in the following format:
-    - First, provide an explanation of what changes were made
+    - First, provide an explanation of what changes were made. Do not mention Reveal.js or any technical details of how you changed. 
     - Then, include the complete modified HTML code within triple backticks (```)
     Ensure the code remains a valid Reveal.js presentation using the CDN (https://cdn.jsdelivr.net/npm/reveal.js@4.6.0/dist/).
     Do not redact any part of the code - include all existing content plus the requested changes.
@@ -221,8 +221,7 @@ async def edit_revealjs_html(request: EditRequest):
 
     User Prompt:
     {request.prompt}
-
-    Do not mention Reveal.js or any technical details of how you changed.
+    
     Return only the explanation followed by the modified Reveal.js HTML code within ``` marks, with no additional text outside this format. 
     """
     
