@@ -1,6 +1,0 @@
-fastapi
-smolagents
-pydantic
-python-dotenv
-openai
-uvicorn

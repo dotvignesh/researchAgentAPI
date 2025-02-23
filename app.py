@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 import openai
 import json
+from pyngrok import ngrok
 import uvicorn
 import threading
 
@@ -14,8 +15,10 @@ load_dotenv()
 
 from fastapi.middleware.cors import CORSMiddleware
 
+# Initialize FastAPI app
 app = FastAPI(title="Market Research and Presentation API")
 
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Adjust this for production
@@ -241,5 +244,27 @@ async def edit_revealjs_html(request: EditRequest):
 async def health_check():
     return {"status": "ok"}
 
-if __name__ == "__main__":
+def start_ngrok():
+    # Set your ngrok auth token (get it from ngrok dashboard)
+    ngrok.set_auth_token(os.getenv("NGROK_AUTH_TOKEN"))
+    
+    # Start ngrok tunnel
+    public_url = ngrok.connect(8000, bind_tls=True).public_url
+    print(f"ngrok tunnel started at: {public_url}")
+    return public_url
+
+def run_server():
     uvicorn.run(app, port=8000)
+
+if __name__ == "__main__":
+    # Add NGROK_AUTH_TOKEN to your .env file
+    if not os.getenv("NGROK_AUTH_TOKEN"):
+        print("Please add NGROK_AUTH_TOKEN to your .env file")
+        exit(1)
+    
+    # Start ngrok in a separate thread
+    ngrok_thread = threading.Thread(target=start_ngrok)
+    ngrok_thread.start()
+    
+    # Run the FastAPI server
+    run_server()
