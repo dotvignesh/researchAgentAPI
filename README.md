@@ -47,7 +47,7 @@ The backend uses FastAPI to provide endpoints that:
      ```bash
      python -m venv venv
      source venv/bin/activate  
-     pip install fastapi smolagents pydantic python-dotenv openai pyngrok uvicorn elevenlabs
+     pip install fastapi smolagents pydantic python-dotenv openai pyngrok uvicorn
      ```
 
 3. **Configure Environment**
